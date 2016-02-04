@@ -1,0 +1,6 @@
+{
+    "domain": "custom.player.build.ftven.net",
+    "port": "8800",
+    "range": "8801,8899",
+    "routesDefinition": "conf/routes.json"
+}
