@@ -96,12 +96,16 @@ server.on('error', function(error) {
     process.exit(1);
 });
 
-server.on('proxy-error', function(error) {
+server.on('proxy_error', function(error) {
     console.error(error);
 });
 
-server.on('config_changed', function() {
-    console.log('config changed');
+server.on('targets_changed', function() {
+    console.log('targets changed');
+});
+
+server.on('targets_error', function(error) {
+    console.error(error);
 });
 
 server.on('targets_updated', function(targets) {

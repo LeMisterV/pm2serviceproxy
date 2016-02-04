@@ -107,7 +107,7 @@ extend(Proxy.prototype, {
     },
 
     _onConfigWatchEvent: function _onConfigWatchEvent(event, filename) {
-        this.emit('config_changed', event, filename);
+        this.emit('targets_changed', event, filename);
         this._readConfig();
     },
 
@@ -144,7 +144,7 @@ extend(Proxy.prototype, {
         var targetPort = this._targets[requested];
 
         if (targetPort < this._portRange[0] || targetPort > this._portRange[1]) {
-            this.emit('proxy-error', new CustomError('configured port out of range', {
+            this.emit('proxy_error', new CustomError('configured port out of range', {
                 port: targetPort
             }));
             return;
@@ -205,7 +205,7 @@ extend(Proxy.prototype, {
     },
 */
     _onProxyError: function _onProxyError(error, request, response) {
-        this.emit('proxy-error', error);
+        this.emit('proxy_error', error);
         response.writeHead(504, {
             'Content-Type': 'text/plain'
         });

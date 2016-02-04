@@ -36,13 +36,14 @@ describe('server', function() {
 
         this.proxy = Proxy.createServer({
             domain: 'domain',
+            range: '0,99999',
             routesDefinition: this.routesDefinitionFile
         });
         this.proxy.on('error', function(error) {
             done(error);
         });
 
-        this.proxy.on('config_changed', function() {
+        this.proxy.on('targets_changed', function() {
         });
 
         this.proxy.on('targets_updated', function(targets) {
