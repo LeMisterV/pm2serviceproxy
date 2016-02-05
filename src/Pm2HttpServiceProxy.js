@@ -22,14 +22,20 @@ function Pm2HttpServiceProxy() {
     this._init.apply(this, arguments);
 }
 
-Pm2HttpServiceProxy.createServer = function() {
-    return new Pm2HttpServiceProxy();
+Pm2HttpServiceProxy.createServer = function(portRange) {
+    return new Pm2HttpServiceProxy(portRange);
 };
 
 util.inherits(Pm2HttpServiceProxy, EventEmitter);
 
 extend(Pm2HttpServiceProxy.prototype, {
-    _init: function _init() {
+    _init: function _init(portRange) {
+        this._portRange = portRange.split(',');
+        if (this._portRange[0] > this._portRange[1]) {
+            this._portRange[2] = this._portRange[0];
+            this._portRange = this._portRange.slice(1);
+        }
+
         this.server = http.createServer();
 
         this.server.on('request', this._onRequest.bind(this));
@@ -112,7 +118,19 @@ extend(Pm2HttpServiceProxy.prototype, {
         return matchingService.port;
     },
 
+    _portGetterPattern: /^\/port\/(.+)$/,
+    _localAdresses: ['::ffff:127.0.0.1', '127.0.0.1'],
+
     _onRequest: function _onRequest(request, response) {
+        if (~this._localAdresses.indexOf(request.socket.remoteAddress) && request.url.substr(0, 6) === '/port/') {
+            var match = this._portGetterPattern.exec(request.url);
+            if (match) {
+                var port = pm2ProcessLookup.getPortForPm2Name('http--' + match[1], [8801, 8899]);
+                response.end('' + port);
+                return;
+            }
+        }
+
         var targetPort = this._getTargetPort(request);
 
         if (targetPort) {

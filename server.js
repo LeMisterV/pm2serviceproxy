@@ -54,6 +54,10 @@ var conf = collectConf({
     p: {
         alias: 'port',
         describe: 'Port to listen'
+    },
+    r: {
+        alias: 'range',
+        description: 'Port range for available ports requests'
     }
 }, function(errors) {
     console.error('\n' + errors.join('\n\n').red + '\n');
@@ -61,7 +65,7 @@ var conf = collectConf({
     process.exit(1);
 });
 
-var server = Pm2HttpServiceProxy.createServer();
+var server = Pm2HttpServiceProxy.createServer(conf.get('range'));
 
 server.on('error', function(error) {
     console.error(error);

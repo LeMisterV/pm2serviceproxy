@@ -13,7 +13,7 @@ module.exports.getPm2ProcessList = getPm2ProcessList;
 module.exports.getPortForPm2Name = getPortForPm2Name;
 
 function getPortForPm2Name(name, range) {
-    var process = getPm2ProcessByName(name);
+    var process = getPm2ProcessByName(name, true);
 
     if (process && process.port) {
         return process.port;
@@ -22,8 +22,8 @@ function getPortForPm2Name(name, range) {
     return getFirstAvailablePortInRange(range);
 }
 
-function getPm2ProcessByName (name) {
-    var processList = getPm2ProcessList()
+function getPm2ProcessByName (name, online) {
+    var processList = getPm2ProcessList(online)
         .filter(function(process) {
             return process.name === name;
         });
@@ -35,7 +35,7 @@ function getFirstAvailablePortInRange(range) {
     var ports = getTcpPortsInUse();
     var i;
 
-    for (i = range[0]; i < range[1]; i++) {
+    for (i = +range[0]; i < +range[1]; i++) {
         if (!ports[i]) {
             return i;
         }
@@ -91,12 +91,20 @@ function getPidPort(pid) {
     return pidPort;
 }
 
-function getPm2ProcessList() {
+function getPm2ProcessList(online) {
     var pm2ListOutput = execSync('pm2 list -m', {
         stdio: [null, null, 'ignore']
     });
 
-    return parsePm2ProcessList(pm2ListOutput.toString());
+    var list = parsePm2ProcessList(pm2ListOutput.toString());
+
+    if (online !== undefined) {
+        list = list.filter(function(process) {
+            return process.online === online;
+        });
+    }
+
+    return list;
 }
 
 function parsePm2ProcessList(pm2Output) {
@@ -107,9 +115,12 @@ function parsePm2ProcessList(pm2Output) {
 
             if (values.name) {
                 values.pid = +values.pid;
+                values.online = values.status === 'online';
 
-                if (values.status === 'online') {
+                if (values.online) {
                     values.port = getPidPort(values.pid);
+                } else {
+                    delete values.port;
                 }
 
                 processList.push(values);
