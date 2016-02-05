@@ -1,16 +1,13 @@
 var http = require('http');
-var URL = require('url');
-var path = require('path');
 var util = require('util');
 var EventEmitter = require('events');
 
-var chokidar = require('chokidar');
 var httpProxy = require('http-proxy');
-var jf = require('jsonfile');
 
 var CustomError = require('./CustomError');
+var pm2ProcessLookup = require('./pm2ProcessLookup');
 
-var pkg = require('../package.json');
+// var pkg = require('../package.json');
 
 function extend(target, values) {
     Object.keys(values).forEach(function(key) {
@@ -18,44 +15,22 @@ function extend(target, values) {
     });
 }
 
-module.exports = Proxy;
+module.exports = Pm2HttpServiceProxy;
 
-function Proxy() {
+function Pm2HttpServiceProxy() {
     EventEmitter.call(this);
     this._init.apply(this, arguments);
 }
 
-Proxy.createServer = function(config) {
-    return new Proxy(config);
+Pm2HttpServiceProxy.createServer = function() {
+    return new Pm2HttpServiceProxy();
 };
 
-util.inherits(Proxy, EventEmitter);
+util.inherits(Pm2HttpServiceProxy, EventEmitter);
 
-extend(Proxy.prototype, {
-    _init: function _init(config) {
-        this.serverConfig = config || {};
-        this._targets = [];
-
-        if (!this.serverConfig.routesDefinition) {
-            throw new CustomError('Missing path for proxy config file');
-        }
-
-        if (!this.serverConfig.domain) {
-            throw new CustomError('Missing domain name handled by proxy');
-        }
-
-        if (!this.serverConfig.range) {
-            throw new CustomError('Missing target ports range definition');
-        }
-
-        this._portRange = this.serverConfig.range.split(',');
-
-        this.serverConfig.routesDefinition = path.resolve(this.serverConfig.routesDefinition);
-
+extend(Pm2HttpServiceProxy.prototype, {
+    _init: function _init() {
         this.server = http.createServer();
-
-        this._initConfig();
-
 
         this.server.on('request', this._onRequest.bind(this));
         this.server.on('error', this._onServerError.bind(this));
@@ -74,45 +49,12 @@ extend(Proxy.prototype, {
         // this.proxy.on('open', ...);
         // this.proxy.on('close', ...);
         this.proxy.on('error', this._onProxyError.bind(this));
+
+        setInterval(this._refreshPm2ProcessList.bind(this), 1000);
     },
 
-    _initConfig: function _initConfig() {
-        this._readConfig();
-        this._watchConfig();
-    },
-
-    _readConfig: function _readConfig() {
-        jf.readFile(this.serverConfig.routesDefinition, this._onConfigRead.bind(this));
-    },
-
-    _onConfigRead: function _onConfigRead(error, config) {
-        if (error) {
-            this.emit('targets_error', CustomError.wrap(error, 'Unable to read config file', {
-                file: this.serverConfig.routesDefinition
-            }));
-            return;
-        }
-
-        this._targets = config;
-
-        this.emit('targets_updated', this._targets);
-    },
-
-    _watchConfig: function _watchConfig() {
-        chokidar.watch(this.serverConfig.routesDefinition, {
-            persistent: false
-        })
-            .on('change', this._onConfigWatchEvent.bind(this))
-            .on('error', this._onConfigWatchError.bind(this));
-    },
-
-    _onConfigWatchEvent: function _onConfigWatchEvent(event, filename) {
-        this.emit('targets_changed', event, filename);
-        this._readConfig();
-    },
-
-    _onConfigWatchError: function _onConfigWatchError(error) {
-        this.emit('error', CustomError.wrap(error, 'Error while watching at proxy config file'));
+    _refreshPm2ProcessList: function _refreshPm2ProcessList() {
+        this.pm2ProcessList = pm2ProcessLookup.getPm2ProcessList();
     },
 
     _onServerError: function _onServerError(error) {
@@ -133,24 +75,41 @@ extend(Proxy.prototype, {
         this.emit('listening', this.server.address().port);
     },
 
+    _httpProcessPattern: /^http--([^\/]+)((?:\/[^\/]+)*)$/,
+
     _getTargetPort: function _getTargetPort(request) {
-        var subdomainlen = request.headers.host.length - this.serverConfig.domain.length;
-        if (subdomainlen <= 0 && request.headers.host.indexOf(this.serverConfig.domain) !== subdomainlen) {
+        if (!this.pm2ProcessList) {
             return;
         }
 
-        var requested = request.headers.host.substr(0, subdomainlen - 1);
+        var matchingService = this.pm2ProcessList
+            .filter(function(process) {
+                var match = this._httpProcessPattern.exec(process.name);
 
-        var targetPort = this._targets[requested];
+                if (!match) {
+                    return false;
+                }
 
-        if (targetPort < this._portRange[0] || targetPort > this._portRange[1]) {
-            this.emit('proxy_error', new CustomError('configured port out of range', {
-                port: targetPort
+                process.matchHost = match[1];
+
+                if (match[2]) {
+                    process.matchPath = match[2];
+                }
+
+                return request.headers.host.indexOf(process.matchHost) === 0;
+            }.bind(this))
+            .sort(function(processA, processB) {
+                return processB.matchHost.length - processA.matchHost.length;
+            })[0];
+
+        if (!matchingService || ! matchingService.port) {
+            this.emit('proxy_error', new CustomError('no matching service found', {
+                host: request.headers.host
             }));
             return;
         }
 
-        return targetPort;
+        return matchingService.port;
     },
 
     _onRequest: function _onRequest(request, response) {
@@ -186,11 +145,11 @@ extend(Proxy.prototype, {
     // },
 /*
     _onProxyRequest: function _onProxyRequest(proxyRequest, clientRequest, response, options) {
-        proxyRequest.setHeader('X-Proxy-version', pkg.version);
-        proxyRequest.setHeader('X-Proxy-original-localAddress', clientRequest.socket.localAddress);
-        proxyRequest.setHeader('X-Proxy-original-localPort', clientRequest.socket.localPort);
-        proxyRequest.setHeader('X-Proxy-original-remoteAddress', clientRequest.socket.remoteAddress);
-        proxyRequest.setHeader('X-Proxy-original-remotePort', clientRequest.socket.remotePort);
+        proxyRequest.setHeader('X-Pm2HttpServiceProxy-version', pkg.version);
+        proxyRequest.setHeader('X-Pm2HttpServiceProxy-original-localAddress', clientRequest.socket.localAddress);
+        proxyRequest.setHeader('X-Pm2HttpServiceProxy-original-localPort', clientRequest.socket.localPort);
+        proxyRequest.setHeader('X-Pm2HttpServiceProxy-original-remoteAddress', clientRequest.socket.remoteAddress);
+        proxyRequest.setHeader('X-Pm2HttpServiceProxy-original-remotePort', clientRequest.socket.remotePort);
     },
 */
 /*
@@ -220,4 +179,3 @@ extend(Proxy.prototype, {
         this.server.close(callback);
     }
 });
-

@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+
+var processLookup = require('../src/pm2ProcessLookup');
+
+var yargs = require('yargs')
+    .strict()
+    .version(function() {
+        return require('../package').version;
+    })
+    .usage('Get port for given subdomain based on current pm2 process list and ports of each process')
+    .help('help')
+    .options({
+        n: {
+            alias: 'name',
+            describe: 'route/process name'
+        },
+        r: {
+            alias: 'range',
+            describe: 'port range in which pick ports'
+        }
+    })
+    .demand('n', 'r');
+
+var yargv = yargs.argv;
+
+if (!/^\d+,\d+$/.test(yargv.range)) {
+    console.error('range must be "<lower-port>,<higher-port>"');
+    yargs.showHelp();
+    process.exit(1);
+}
+
+var range = yargv.range.split(',');
+if (range[0] > range[1]) {
+    range[2] = range[0];
+    range = range.slice(1);
+}
+
+console.log(
+    processLookup.getPortForPm2Name(yargv.name, range)
+);

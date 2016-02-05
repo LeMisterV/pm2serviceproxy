@@ -2,7 +2,7 @@ var yargs = require('yargs');
 var nconf = require('nconf');
 var colors = require('colors');
 
-var Proxy = require('./src/Proxy');
+var Pm2HttpServiceProxy = require('./src/Pm2HttpServiceProxy');
 
 var pkg = require('./package');
 
@@ -28,7 +28,7 @@ function collectConf(optionsSchema, onError) {
         })
         .version(pkg.version)
         .wrap(getDisplayWidth())
-        .usage('Run a HTTP proxy server to route requests to local services')
+        .usage('Run a HTTP proxy server to route requests to local pm2 http services')
         .help('help')
         .options(optionsSchema);
 
@@ -36,18 +36,6 @@ function collectConf(optionsSchema, onError) {
         .argv(yargs)
         .env()
         .file({ file: pkg.configfile });
-
-    if (!nconf.get('domain')) {
-        throw new Error('Missing config value domain');
-    }
-
-    if (!nconf.get('range')) {
-        throw new Error('Missing config value range');
-    }
-
-    if (!/^\d+\,\d+$/.test(nconf.get('range'))) {
-        throw new TypeError('Range should be like "<firstPort>,<lastPort>"');
-    }
 
     try {
         nconf.set('port', sanitizPort(nconf.get('port')));
@@ -63,21 +51,9 @@ function collectConf(optionsSchema, onError) {
 }
 
 var conf = collectConf({
-    d: {
-        alias: 'domain',
-        describe: 'domain for which we handle sub-domains'
-    },
-    r: {
-        alias: 'range',
-        describe: 'port range allowed as targets'
-    },
     p: {
         alias: 'port',
         describe: 'Port to listen'
-    },
-    c: {
-        alias: 'routesDefinition',
-        describe: 'Path to proxy config'
     }
 }, function(errors) {
     console.error('\n' + errors.join('\n\n').red + '\n');
@@ -85,11 +61,7 @@ var conf = collectConf({
     process.exit(1);
 });
 
-var server = Proxy.createServer({
-    domain: conf.get('domain'),
-    range: conf.get('range'),
-    routesDefinition: conf.get('routesDefinition')
-});
+var server = Pm2HttpServiceProxy.createServer();
 
 server.on('error', function(error) {
     console.error(error);
@@ -98,18 +70,6 @@ server.on('error', function(error) {
 
 server.on('proxy_error', function(error) {
     console.error(error);
-});
-
-server.on('targets_changed', function() {
-    console.log('targets changed');
-});
-
-server.on('targets_error', function(error) {
-    console.error(error);
-});
-
-server.on('targets_updated', function(targets) {
-    console.log('targets updated', targets);
 });
 
 server.on('listening', function(port) {
