@@ -22,7 +22,7 @@ function Pm2HttpServiceProxy () {
   this._init.apply(this, arguments);
 }
 
-Pm2HttpServiceProxy.createServer = function (portRange) {
+Pm2HttpServiceProxy.createServer = function createServer (portRange) {
   return new Pm2HttpServiceProxy(portRange);
 };
 
@@ -60,15 +60,19 @@ extend(Pm2HttpServiceProxy.prototype, {
   },
 
   _refreshPm2ProcessList: function _refreshPm2ProcessList () {
-    this.pm2ProcessList = pm2ProcessLookup.getPm2ProcessList();
+    pm2ProcessLookup.getPm2ProcessList(true, function (error, list) {
+      if (error) {
+        return;
+      }
+
+      this.pm2ProcessList = list;
+    }.bind(this));
   },
 
   _onServerError: function _onServerError (error) {
     if (error.code === 'EADDRINUSE') {
       this.emit('error', CustomError.wrap(error, 'Port already in use'));
-    }
-
-    else if (error.code === 'EACCES') {
+    } else if (error.code === 'EACCES') {
       this.emit('error', CustomError.wrap(error, 'Access restricted on requested port'));
     } else {
       this.emit('error', CustomError.wrap(error));
@@ -106,7 +110,7 @@ extend(Pm2HttpServiceProxy.prototype, {
         return processB.matchHost.length - processA.matchHost.length;
       })[0];
 
-    if (!matchingService || ! matchingService.port) {
+    if (!matchingService || !matchingService.port) {
       this.emit('proxy_error', new CustomError('no matching service found', {
         host: request.headers.host
       }));
@@ -123,8 +127,16 @@ extend(Pm2HttpServiceProxy.prototype, {
     if (~this._localAdresses.indexOf(request.socket.remoteAddress) && request.url.substr(0, 6) === '/port/') {
       var match = this._portGetterPattern.exec(request.url);
       if (match) {
-        var port = pm2ProcessLookup.getPortForPm2Name('http--' + match[1], [8801, 8899]);
-        response.end('' + port);
+        pm2ProcessLookup.getPortForPm2Name('http--' + match[1], [8801, 8899], function (error, port) {
+          if (error) {
+            response.statusCode = 500;
+            response.statusMessage = 'Unable to find requested port';
+            response.end('Unable to find requested port');
+            return;
+          }
+
+          response.end('' + port);
+        });
         return;
       }
     }
@@ -143,7 +155,7 @@ extend(Pm2HttpServiceProxy.prototype, {
 
     response.statusCode = 503;
     response.statusMessage = 'No such target service';
-    response.end();
+    response.end('No such target service');
   },
 
   // _onConnection: function _onConnection(socket) {
