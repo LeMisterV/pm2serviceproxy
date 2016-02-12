@@ -56,7 +56,7 @@ extend(Pm2HttpServiceProxy.prototype, {
     // this.proxy.on('close', ...);
     this.proxy.on('error', this._onProxyError.bind(this));
 
-    setInterval(this._refreshPm2ProcessList.bind(this), 1000);
+    setInterval(this._refreshPm2ProcessList.bind(this), 10000);
   },
 
   _refreshPm2ProcessList: function _refreshPm2ProcessList () {
