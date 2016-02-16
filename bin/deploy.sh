@@ -8,7 +8,7 @@ then
     echo ""
     rsync -a --exclude=.git* ./ $JENKINS_BUILD_DIR/server/ && \
     echo "OK" || \
-    echo "KO"
+    (echo "KO" && exit 1)
 
     cd $JENKINS_BUILD_DIR/server
 fi
@@ -20,7 +20,7 @@ echo ""
 # TODO: We should probably have an init.sh script in our GIT repo
 echo "npm install"
 npm install > ../server-npm-install
-[[ $? = 0 ]] && echo "OK" || echo "KO"
+[[ $? = 0 ]] && echo "OK" || (echo "KO" && exit 1)
 echo ""
 
 BUILD_ID=dontKillMe \
