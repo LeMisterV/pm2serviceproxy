@@ -17,7 +17,7 @@ function extend (target, values) {
 
 module.exports = Pm2HttpServiceProxy;
 
-function Pm2HttpServiceProxy () {
+function Pm2HttpServiceProxy (range) {
   EventEmitter.call(this);
   this._init.apply(this, arguments);
 }
@@ -29,7 +29,9 @@ Pm2HttpServiceProxy.createServer = function createServer () {
 util.inherits(Pm2HttpServiceProxy, EventEmitter);
 
 extend(Pm2HttpServiceProxy.prototype, {
-  _init: function _init () {
+  _init: function _init (range) {
+    this.range = range || pm2ProcessLookup.defaultRange;
+
     this.server = http.createServer();
 
     this.server.on('request', this._onRequest.bind(this));
@@ -85,31 +87,44 @@ extend(Pm2HttpServiceProxy.prototype, {
     return willGetPort;
   },
 
-  // _portGetterPattern: /^\/port\/(.+)$/,
-  // _localAdresses: ['::ffff:127.0.0.1', '127.0.0.1'],
+  _portGetterPattern: /^\/port\/([^\/]+)$/,
+  _localAdresses: ['::ffff:127.0.0.1', '127.0.0.1'],
 
   _onRequest: function _onRequest (request, response) {
-/*
     if (~this._localAdresses.indexOf(request.socket.remoteAddress) && request.url.substr(0, 6) === '/port/') {
       var match = this._portGetterPattern.exec(request.url);
-      if (match) {
-        pm2ProcessLookup.getPortForPm2Name('http--' + match[1], [8801, 8899], function (error, port) {
-          if (error) {
-            response.statusCode = 500;
-            response.statusMessage = 'Unable to find requested port';
-            response.end('Unable to find requested port');
-            return;
-          }
-
-          response.end('' + port);
+      if (!match) {
+        this.emit('error', new CustomError('port request not matching expected pattern') ,{
+          request: request
         });
+        response.statusCode = 400;
+        response.statusMessage = 'Unable to answer your request';
+        response.end('Unable to answer your request');
         return;
       }
+
+      pm2ProcessLookup.getPortForDomain(match[1], this.range)
+        .then((port) => {
+          response.end('' + port);
+        }, (error) => {
+          this.emit('error', CustomError.wrap(error, 'unable to find a port for this domain') ,{
+            domain: match[1],
+            range: this.range
+          });
+          response.statusCode = 500;
+          response.statusMessage = 'Unable to find requested port';
+          response.end('Unable to find requested port');
+        });
+
+      return;
     }
-*/
+
     this._getTargetPort(request.headers.host)
       .then((port) => {
         if (!port) {
+          this.emit('error', new CustomError('unable to find service process for this domain') ,{
+            domain: request.headers.host
+          });
           response.statusCode = 503;
           response.statusMessage = 'No such target service';
           response.end('No such target service');
