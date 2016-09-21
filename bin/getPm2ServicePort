@@ -15,9 +15,13 @@ var yargs = require('yargs')
       alias: 'domain',
       describe: 'domain name'
     },
+    f: {
+      alias: 'find',
+      describe: 'If domain has no port allocated yet, find an available port'
+    },
     r: {
       alias: 'range',
-      describe: 'port range in which pick ports (ex: 8800:9000 )'
+      describe: 'port range in which pick ports (default: 8800:9000 )'
     },
     v: {
       alias: 'verbose',
@@ -27,19 +31,23 @@ var yargs = require('yargs')
   .demand('d');
 
 var yargv = yargs.argv;
-
-if (yargv.range && !/^\d+:\d+$/.test(yargv.range)) {
-  console.error(chalk.red('range must be "<lower-port>:<higher-port>"'));
-  yargs.showHelp();
-  process.exit(1);
-}
-
 var range;
-if (yargv.range) {
-  range = yargv.range.split(':');
-  if (range[0] > range[1]) {
-    range[2] = range[0];
-    range = range.slice(1);
+
+if (yargv.find) {
+  if (yargv.range) {
+    if (!/^\d+:\d+$/.test(yargv.range)) {
+      console.error(chalk.red('range must be "<lower-port>:<higher-port>"'));
+      yargs.showHelp();
+      process.exit(1);
+    }
+
+    range = yargv.range.split(':').map((value) => +value);
+    if (range[0] > range[1]) {
+      range[2] = range[0];
+      range = range.slice(1);
+    }
+  } else {
+    range = processLookup.defaultRange;
   }
 }
 

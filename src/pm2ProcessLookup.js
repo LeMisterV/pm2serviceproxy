@@ -7,9 +7,11 @@ const emitter = new EventEmitter();
 
 const netstatLinePattern = /^\w+\s+\d+\s+\d+\s+[^\s]+:(\d+)\s+[^\s]+\s+[^\s]+(?:\s+(?:(\d+)\/[^\s]+|-))?/;
 
+module.exports.defaultRange = [8801, 9000];
 module.exports.on = emitter.on.bind(emitter);
+module.exports.getPortForDomain = getPortForDomain;
 
-module.exports.getPortForDomain = function getPortForDomain (domain, range) {
+function getPortForDomain (domain, range) {
   emitter.emit('message', 'Searching port for domain "' + domain + '"');
   if (range) {
     emitter.emit('message', 'For free port, it will be selected in range ' + range[0] + ' to ' + range[1]);
