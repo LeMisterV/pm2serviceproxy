@@ -22,20 +22,14 @@ function Pm2HttpServiceProxy () {
   this._init.apply(this, arguments);
 }
 
-Pm2HttpServiceProxy.createServer = function createServer (portRange) {
-  return new Pm2HttpServiceProxy(portRange);
+Pm2HttpServiceProxy.createServer = function createServer () {
+  return new Pm2HttpServiceProxy();
 };
 
 util.inherits(Pm2HttpServiceProxy, EventEmitter);
 
 extend(Pm2HttpServiceProxy.prototype, {
-  _init: function _init (portRange) {
-    this._portRange = portRange.split(',');
-    if (this._portRange[0] > this._portRange[1]) {
-      this._portRange[2] = this._portRange[0];
-      this._portRange = this._portRange.slice(1);
-    }
-
+  _init: function _init () {
     this.server = http.createServer();
 
     this.server.on('request', this._onRequest.bind(this));
@@ -55,18 +49,6 @@ extend(Pm2HttpServiceProxy.prototype, {
     // this.proxy.on('open', ...);
     // this.proxy.on('close', ...);
     this.proxy.on('error', this._onProxyError.bind(this));
-
-    setInterval(this._refreshPm2ProcessList.bind(this), 10000);
-  },
-
-  _refreshPm2ProcessList: function _refreshPm2ProcessList () {
-    pm2ProcessLookup.getPm2ProcessList(true, function (error, list) {
-      if (error) {
-        return;
-      }
-
-      this.pm2ProcessList = list;
-    }.bind(this));
   },
 
   _onServerError: function _onServerError (error) {
@@ -83,47 +65,31 @@ extend(Pm2HttpServiceProxy.prototype, {
     this.emit('listening', this.server.address().port);
   },
 
-  _httpProcessPattern: /^http--([^\/]+)((?:\/[^\/]+)*)$/,
+  _domainCache: {},
 
-  _getTargetPort: function _getTargetPort (request) {
-    if (!this.pm2ProcessList) {
-      return;
+  _getTargetPort: function _getTargetPort (domain) {
+    if (domain in this._domainCache) {
+      return Promise.resolve(this._domainCache[domain]);
     }
 
-    var matchingService = this.pm2ProcessList
-      .filter(function (process) {
-        var match = this._httpProcessPattern.exec(process.name);
+    var willGetPort = pm2ProcessLookup.getPortForDomain(domain);
 
-        if (!match) {
-          return false;
-        }
+    willGetPort
+      .then((port) => {
+        this._domainCache[domain] = port;
+        setTimeout(() => {
+          delete this._domainCache[domain];
+        }, 5000);
+      });
 
-        process.matchHost = match[1];
-
-        if (match[2]) {
-          process.matchPath = match[2];
-        }
-
-        return request.headers.host.indexOf(process.matchHost) === 0;
-      }.bind(this))
-      .sort(function (processA, processB) {
-        return processB.matchHost.length - processA.matchHost.length;
-      })[0];
-
-    if (!matchingService || !matchingService.port) {
-      this.emit('proxy_error', new CustomError('no matching service found', {
-        host: request.headers.host
-      }));
-      return;
-    }
-
-    return matchingService.port;
+    return willGetPort;
   },
 
-  _portGetterPattern: /^\/port\/(.+)$/,
-  _localAdresses: ['::ffff:127.0.0.1', '127.0.0.1'],
+  // _portGetterPattern: /^\/port\/(.+)$/,
+  // _localAdresses: ['::ffff:127.0.0.1', '127.0.0.1'],
 
   _onRequest: function _onRequest (request, response) {
+/*
     if (~this._localAdresses.indexOf(request.socket.remoteAddress) && request.url.substr(0, 6) === '/port/') {
       var match = this._portGetterPattern.exec(request.url);
       if (match) {
@@ -140,22 +106,23 @@ extend(Pm2HttpServiceProxy.prototype, {
         return;
       }
     }
-
-    var targetPort = this._getTargetPort(request);
-
-    if (targetPort) {
-      this.proxy.web(request, response, {
-        target: {
-          host: '127.0.0.1',
-          port: targetPort
+*/
+    this._getTargetPort(request.headers.host)
+      .then((port) => {
+        if (!port) {
+          response.statusCode = 503;
+          response.statusMessage = 'No such target service';
+          response.end('No such target service');
+          return;
         }
-      });
-      return;
-    }
 
-    response.statusCode = 503;
-    response.statusMessage = 'No such target service';
-    response.end('No such target service');
+        this.proxy.web(request, response, {
+          target: {
+            host: '127.0.0.1',
+            port: port
+          }
+        });
+      });
   },
 
   // _onConnection: function _onConnection(socket) {
@@ -196,6 +163,9 @@ extend(Pm2HttpServiceProxy.prototype, {
     response.writeHead(504, {
       'Content-Type': 'text/plain'
     });
+
+    response.write(error.message);
+
     response.end('Something went wrong while transfering request to target');
   },
 

@@ -1,40 +1,75 @@
 #!/usr/bin/env node
 
 var processLookup = require('../src/pm2ProcessLookup');
+var chalk = require('chalk');
 
 var yargs = require('yargs')
   .strict()
   .version(function () {
     return require('../package').version;
   })
-  .usage('Get port for given subdomain based on current pm2 process list and ports of each process')
+  .usage('Get port for given domain based on current pm2 process list and ports of each process')
   .help('help')
   .options({
-    n: {
-      alias: 'name',
-      describe: 'route/process name'
+    d: {
+      alias: 'domain',
+      describe: 'domain name'
     },
     r: {
       alias: 'range',
-      describe: 'port range in which pick ports'
+      describe: 'port range in which pick ports (ex: 8800:9000 )'
+    },
+    v: {
+      alias: 'verbose',
+      describe: 'explain what happens'
     }
   })
-  .demand('n', 'r');
+  .demand('d');
 
 var yargv = yargs.argv;
 
-if (!/^\d+,\d+$/.test(yargv.range)) {
-  console.error('range must be "<lower-port>,<higher-port>"');
+if (yargv.range && !/^\d+:\d+$/.test(yargv.range)) {
+  console.error(chalk.red('range must be "<lower-port>:<higher-port>"'));
   yargs.showHelp();
   process.exit(1);
 }
 
-var range = yargv.range.split(',');
-if (range[0] > range[1]) {
-  range[2] = range[0];
-  range = range.slice(1);
+var range;
+if (yargv.range) {
+  range = yargv.range.split(':');
+  if (range[0] > range[1]) {
+    range[2] = range[0];
+    range = range.slice(1);
+  }
 }
 
-console.log(
-  processLookup.getPortForPm2Name(yargv.name, range)
-);
+if (yargv.verbose) {
+  var startTime = Date.now();
+  var prev = startTime;
+  processLookup.on('message', (msg) => {
+    var now = Date.now();
+    var fromStart = now - startTime;
+    var fromPrev = now - prev;
+    prev = now;
+    msg = chalk.green(fromStart + ' - ' + fromPrev) + '\t' + msg.replace(/\n/g, '\n\t\t');
+    console.log(msg);
+  });
+  processLookup.on('warning', (msg) => {
+    var now = Date.now();
+    var fromStart = now - startTime;
+    var fromPrev = now - prev;
+    prev = now;
+    msg = chalk.green(fromStart + ' - ' + fromPrev) + '\t' + chalk.red(msg.replace(/\n/g, '\n\t'));
+    console.log(msg);
+  });
+}
+
+processLookup.getPortForDomain(yargv.domain, range)
+  .then(
+    (port) => {
+      console.log(port);
+    },
+    (err) => {
+      console.error(err);
+    }
+  );

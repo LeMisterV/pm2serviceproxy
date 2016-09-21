@@ -1,6 +1,7 @@
 var yargs = require('yargs');
 var nconf = require('nconf');
 
+var pm2ProcessLookup = require('./src/pm2ProcessLookup');
 var Pm2HttpServiceProxy = require('./src/Pm2HttpServiceProxy');
 
 var pkg = require('./package');
@@ -76,6 +77,14 @@ server.on('proxy_error', function (error) {
 
 server.on('listening', function (port) {
   console.log('Listening on port %d', port);
+});
+
+pm2ProcessLookup.on('message', (msg) => {
+  console.log(msg);
+});
+
+pm2ProcessLookup.on('warning', (msg) => {
+  console.error(msg);
 });
 
 server.listen(conf.get('port'));
