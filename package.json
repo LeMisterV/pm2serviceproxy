@@ -1,6 +1,6 @@
 {
   "name": "pm2HttpProxy",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Proxy for PM2 HTTP services",
   "main": "server.js",
   "scripts": {
