@@ -6,10 +6,34 @@ const EventEmitter = require('events');
 const emitter = new EventEmitter();
 
 const netstatLinePattern = /^\w+\s+\d+\s+\d+\s+[^\s]+:(\d+)\s+[^\s]+\s+[^\s]+(?:\s+(?:(\d+)\/[^\s]+|-))?/;
+const bookingTime = 300000;
+const simpleDomainVar = 'DOMAIN';
+const simplePortVar = 'PORT';
+const complexVar = 'HOSTNAME_TO_PORT';
 
 module.exports.defaultRange = [8801, 9000];
 module.exports.on = emitter.on.bind(emitter);
 module.exports.getPortForDomain = getPortForDomain;
+
+var bookedPorts = {};
+
+function bookAPort(domain, range) {
+  if (bookedPorts[domain]) {
+    return bookedPorts[domain];
+  }
+
+  let willGetPort = getRandomAvailablePortInRange(range);
+
+  willGetPort
+    .then((port) => {
+      bookedPorts[domain] = port;
+      setTimeout(() => {
+        delete bookedPorts[domain];
+      }, bookingTime).unref();
+    });
+
+  return willGetPort;
+}
 
 function getPortForDomain (domain, range) {
   emitter.emit('message', 'Searching port for domain "' + domain + '"');
@@ -19,19 +43,19 @@ function getPortForDomain (domain, range) {
 
   return getPm2ProcessList()
   .then((list) => {
-    emitter.emit('message', 'pm2 process list:\n' + JSON.stringify(list.map((item) => { return item.name + ':' + item.pm2_env.env.PORT }), null, '  '));
+    emitter.emit('message', 'pm2 process list:\n' + JSON.stringify(list.map((item) => { return item.name + ':' + item.pm2_env.env[simplePortVar] }), null, '  '));
 
     let found = list.find((item) => {
-      var simplePortRelation = item.pm2_env.env.DOMAIN === domain && ('PORT' in item.pm2_env.env);
+      var simplePortRelation = item.pm2_env.env[simpleDomainVar] === domain && (simplePortVar in item.pm2_env.env);
 
       if (simplePortRelation) {
         item.domainToPort = {
-          [domain]: item.pm2_env.env.PORT
+          [domain]: item.pm2_env.env[simplePortVar]
         };
         return true;
       }
 
-      item.domainToPort = parseHostnameToPortValue(item.pm2_env.env.HOSTNAME_TO_PORT);
+      item.domainToPort = parseHostnameToPortValue(item.pm2_env.env[complexVar]);
 
       return item.domainToPort && item.domainToPort[domain];
     });
@@ -42,7 +66,7 @@ function getPortForDomain (domain, range) {
         return;
       }
 
-      return getRandomAvailablePortInRange(range);
+      return bookAPort(domain, range);
     }
 
     emitter.emit('message', 'Found a process using this domain and listening a port');
@@ -115,8 +139,10 @@ function getRandomAvailablePortInRange (range) {
   return getTcpPortsInUse()
     .then((ports) => {
       emitter.emit('message', 'List of ports in use:\n' + JSON.stringify(ports, null, '  '));
+      emitter.emit('message', 'List of ports booked:\n' + JSON.stringify(bookedPorts, null, '  '));
       emitter.emit('message', 'Searching for an available port in range ' + range[0] + ' to ' + range[1]);
 
+      Object.keys(bookedPorts).forEach((port) => { if (ports.indexOf(port) === -1 ) ports.push(port); });
       var port = getRandomInt(range[0], range[1], ports);
 
       if (port === undefined) {
