@@ -68,7 +68,6 @@ var server = Pm2HttpServiceProxy.createServer(conf.get('range'));
 
 server.on('error', function (error) {
   console.error(error);
-  process.exit(1);
 });
 
 server.on('proxy_error', function (error) {
