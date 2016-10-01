@@ -10,14 +10,14 @@ var pm2ProcessLookup = require('./pm2ProcessLookup');
 // var pkg = require('../package.json');
 
 function extend (target, values) {
-  Object.keys(values).forEach(function (key) {
+  Object.keys(values).forEach((key) => {
     target[key] = values[key];
   });
 }
 
 module.exports = Pm2HttpServiceProxy;
 
-function Pm2HttpServiceProxy (range) {
+function Pm2HttpServiceProxy () {
   EventEmitter.call(this);
   this._init.apply(this, arguments);
 }
@@ -26,27 +26,46 @@ Pm2HttpServiceProxy.createServer = function createServer () {
   return new Pm2HttpServiceProxy();
 };
 
+// Emits events:
+//  - listening
+//  - info
+//  - error
+//  - request_error
+//  - proxy_error
+
 util.inherits(Pm2HttpServiceProxy, EventEmitter);
 
 extend(Pm2HttpServiceProxy.prototype, {
+  _domainCache: {},
+  _domainCacheTimeout: 5000,
+
+  _portGetterPattern: /^\/port\/([^\/]+)$/,
+  _localAdresses: ['::ffff:127.0.0.1', '127.0.0.1'],
+
   _init: function _init (range) {
     this.range = range || pm2ProcessLookup.defaultRange;
 
     this.server = http.createServer();
 
-    this.server.on('request', this._onRequest.bind(this));
-    this.server.on('error', this._onServerError.bind(this));
-    // this.server.on('clientError', this._onClientError.bind(this));
+    // net.Server events
     this.server.on('listening', this._onServerListening.bind(this));
+    this.server.on('error', this._onServerError.bind(this));
     // this.server.on('connection', this._onConnection.bind(this));
     // this.server.on('close', this._onClose.bind(this));
+
+    // http.Server events
+    this.server.on('request', this._onRequest.bind(this));
+    this.server.on('upgrade', this._onRequestUpgrade.bind(this));
+    this.server.on('clientError', this._onClientError.bind(this));
     // this.server.on('checkContinue', ...);
+    //
+    // TODO: needed to handle CONNECT method... We should probably add support on this because this is a proxy server.
     // this.server.on('connect', ...);
-    // this.server.on('upgrade', ...);
 
     this.proxy = httpProxy.createProxyServer();
 
     // this.proxy.on('proxyReq', this._onProxyRequest.bind(this));
+    // this.proxy.on('proxyReqWs', this._onProxyRequestWebsocket.bind(this));
     // this.proxy.on('proxyRes', ...);
     // this.proxy.on('open', ...);
     // this.proxy.on('close', ...);
@@ -67,77 +86,129 @@ extend(Pm2HttpServiceProxy.prototype, {
     this.emit('listening', this.server.address().port);
   },
 
-  _domainCache: {},
-
-  _getTargetPort: function _getTargetPort (domain) {
-    if (domain in this._domainCache) {
-      return Promise.resolve(this._domainCache[domain]);
-    }
-
-    var willGetPort = pm2ProcessLookup.getPortForDomain(domain);
-
-    willGetPort
-      .then((port) => {
-        this._domainCache[domain] = port;
-        setTimeout(() => {
-          delete this._domainCache[domain];
-        }, 5000);
-      });
-
-    return willGetPort;
+  _onClientError: function _onClientError (error) {
+    this.emit('request_error', CustomError.wrap(error, 'Error on request\'s socket'));
   },
 
-  _portGetterPattern: /^\/port\/([^\/]+)$/,
-  _localAdresses: ['::ffff:127.0.0.1', '127.0.0.1'],
+  _onSearchPortRequest: function _onSearchPortRequest (request, response) {
+    var match = this._portGetterPattern.exec(request.url);
+    if (!match) {
+      response.statusCode = 400;
+      response.statusMessage = 'Unable to answer your request';
+      response.end('Unable to answer your request');
+      this.emit('request_error', new CustomError('port request not matching expected pattern', {
+        request
+      }));
+      return;
+    }
+
+    var domain = match[1];
+
+    pm2ProcessLookup.getPortForDomain(domain, this.range)
+      .then((port) => {
+        response.end('' + port);
+        this.emit('info', 'port search finished with success', {
+          domain,
+          range: this.range,
+          port
+        });
+      }, (error) => {
+        response.statusCode = 500;
+        response.statusMessage = 'Unable to find requested port';
+        response.end('Unable to find requested port');
+        this.emit('request_error', CustomError.wrap(error, 'unable to find a port for this domain', {
+          domain,
+          range: this.range
+        }));
+      });
+  },
 
   _onRequest: function _onRequest (request, response) {
-    if (~this._localAdresses.indexOf(request.socket.remoteAddress) && request.url.substr(0, 6) === '/port/') {
-      var match = this._portGetterPattern.exec(request.url);
-      if (!match) {
-        this.emit('error', new CustomError('port request not matching expected pattern') ,{
-          request: request
-        });
-        response.statusCode = 400;
-        response.statusMessage = 'Unable to answer your request';
-        response.end('Unable to answer your request');
-        return;
-      }
-
-      pm2ProcessLookup.getPortForDomain(match[1], this.range)
-        .then((port) => {
-          response.end('' + port);
-        }, (error) => {
-          this.emit('error', CustomError.wrap(error, 'unable to find a port for this domain') ,{
-            domain: match[1],
-            range: this.range
-          });
-          response.statusCode = 500;
-          response.statusMessage = 'Unable to find requested port';
-          response.end('Unable to find requested port');
-        });
-
-      return;
+    if (request.url.substr(0, 6) === '/port/' && this._localAdresses.indexOf(request.socket.remoteAddress) !== -1) {
+      return this._onSearchPortRequest(request, response);
     }
 
     this._getTargetPort(request.headers.host)
       .then((port) => {
-        if (!port) {
-          this.emit('error', new CustomError('unable to find service process for this domain') ,{
-            domain: request.headers.host
-          });
-          response.statusCode = 503;
-          response.statusMessage = 'No such target service';
-          response.end('No such target service');
-          return;
-        }
+        this.emit('info', 'request redirected', {
+          domain: request.headers.host,
+          port,
+          request,
+          response
+        });
 
         this.proxy.web(request, response, {
           target: {
             host: '127.0.0.1',
-            port: port
+            port
           }
         });
+      }, () => {
+        response.statusCode = 503;
+        response.statusMessage = 'No such target service';
+        response.end('No such target service');
       });
+  },
+
+  _onRequestUpgrade: function _onRequestUpgrade (request, socket, head) {
+    this._getTargetPort(request.headers.host)
+      .then((port) => {
+        this.emit('info', 'websocket redirected', {
+          domain: request.headers.host,
+          port,
+          request,
+          socket,
+          head
+        });
+
+        this.proxy.ws(request, socket, head, {
+          target: {
+            host: '127.0.0.1',
+            port
+          }
+        });
+      }, () => {
+        socket.end('No such target service');
+      });
+  },
+
+  _getTargetPort: function _getTargetPort (domain) {
+    if (domain in this._domainCache) {
+      var port = this._domainCache[domain];
+
+      this.emit('info', 'domain\'s port resolved from cache', {
+        domain,
+        port
+      });
+
+      return Promise.resolve(port);
+    }
+
+    var willGetPort = pm2ProcessLookup.getPortForDomain(domain)
+      .then(
+        null,
+        (error) => {
+          error = CustomError.wrap(error, 'unable to find service process for this domain', { domain });
+          this.emit('request_error', error);
+
+          return Promise.reject(error);
+        }
+      );
+
+    willGetPort
+      .then((port) => {
+        this.emit('info', 'domain\'s port resolved from pm2', {
+          domain,
+          port
+        });
+
+        this._domainCache[domain] = port;
+        setTimeout(() => {
+          delete this._domainCache[domain];
+        }, this._domainCacheTimeout);
+      });
+
+    return willGetPort;
   },
 
   // _onConnection: function _onConnection(socket) {
@@ -174,14 +245,21 @@ extend(Pm2HttpServiceProxy.prototype, {
       },
   */
   _onProxyError: function _onProxyError (error, request, response) {
+    error = CustomError.wrap(error, {
+      request,
+      response
+    });
+
     this.emit('proxy_error', error);
+
     response.writeHead(504, {
       'Content-Type': 'text/plain'
     });
 
+    response.write('Something went wrong while transfering request to target');
     response.write(error.message);
 
-    response.end('Something went wrong while transfering request to target');
+    response.end();
   },
 
   listen: function listen (port, callback) {
@@ -189,6 +267,32 @@ extend(Pm2HttpServiceProxy.prototype, {
   },
 
   close: function (callback) {
-    this.server.close(callback);
+    var count = 0;
+    var finalError;
+
+    function muxCallbacks (error) {
+      count += 1;
+
+      if (error) {
+        error = CustomError.wrap(error);
+
+        this.emit('error', error);
+
+        if (!finalError) {
+          finalError = error;
+        } else {
+          finalError = CustomError.wrapMulti([finalError, error], 'Errors while closing servers');
+        }
+      }
+
+      if (count === 2) {
+        return callback(finalError);
+      }
+    }
+
+    this.emit('info', 'Closing pm2 proxy server');
+
+    this.server.close(muxCallbacks);
+    this.proxy.close(muxCallbacks);
   }
 });

@@ -66,16 +66,30 @@ var conf = collectConf({
 
 var server = Pm2HttpServiceProxy.createServer(conf.get('range'));
 
-server.on('error', function (error) {
-  console.error(error);
+server.on('error', (error) => {
+  console.error('http server error', error);
 });
 
-server.on('proxy_error', function (error) {
-  console.error(error);
+server.on('proxy_error', (error) => {
+  console.error('http proxy error', error);
 });
 
-server.on('listening', function (port) {
+server.on('request_error', (error) => {
+  console.error('http request error', error);
+});
+
+server.on('listening', (port) => {
   console.log('Listening on port %d', port);
+});
+
+server.on('info', (msg, data) => {
+  var simpleData = {};
+
+  Object.keys(data).forEach((key) => {
+    simpleData[key] = '' + data[key];
+  });
+
+  console.log(msg, simpleData);
 });
 
 pm2ProcessLookup.on('message', (msg) => {

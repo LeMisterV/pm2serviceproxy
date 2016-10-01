@@ -1,8 +1,10 @@
 'use strict';
 
 const exec = require('child_process').exec;
-const pm2 = require('pm2');
 const EventEmitter = require('events');
+
+const pm2 = require('pm2');
+
 const emitter = new EventEmitter();
 
 const netstatLinePattern = /^\w+\s+\d+\s+\d+\s+[^\s]+:(\d+)\s+[^\s]+\s+[^\s]+(?:\s+(?:(\d+)\/[^\s]+|-))?/;
@@ -17,7 +19,7 @@ module.exports.getPortForDomain = getPortForDomain;
 
 var bookedPorts = {};
 
-function bookAPort(domain, range) {
+function bookAPort (domain, range) {
   if (bookedPorts[domain]) {
     return bookedPorts[domain];
   }
@@ -35,6 +37,21 @@ function bookAPort(domain, range) {
   return willGetPort;
 }
 
+function findPm2ProcessOnDomain (domain, item) {
+  var simplePortRelation = (item.pm2_env.env[simpleDomainVar] === domain) && (simplePortVar in item.pm2_env.env);
+
+  if (simplePortRelation) {
+    item.domainToPort = {
+      [domain]: item.pm2_env.env[simplePortVar]
+    };
+    return true;
+  }
+
+  item.domainToPort = parseHostnameToPortValue(item.pm2_env.env[complexVar]);
+
+  return item.domainToPort && item.domainToPort[domain];
+}
+
 function getPortForDomain (domain, range) {
   emitter.emit('message', 'Searching port for domain "' + domain + '"');
   if (range) {
@@ -43,27 +60,16 @@ function getPortForDomain (domain, range) {
 
   return getPm2ProcessList()
   .then((list) => {
-    emitter.emit('message', 'pm2 process list:\n' + JSON.stringify(list.map((item) => { return item.name + ':' + item.pm2_env.env[simplePortVar] }), null, '  '));
+    var listFormated = list.map((item) => item.name + ':' + item.pm2_env.env[simplePortVar]);
 
-    let found = list.find((item) => {
-      var simplePortRelation = item.pm2_env.env[simpleDomainVar] === domain && (simplePortVar in item.pm2_env.env);
+    emitter.emit('message', 'pm2 process list:\n' + JSON.stringify(listFormated, null, '  '));
 
-      if (simplePortRelation) {
-        item.domainToPort = {
-          [domain]: item.pm2_env.env[simplePortVar]
-        };
-        return true;
-      }
-
-      item.domainToPort = parseHostnameToPortValue(item.pm2_env.env[complexVar]);
-
-      return item.domainToPort && item.domainToPort[domain];
-    });
+    let found = list.find(findPm2ProcessOnDomain.bind(null, domain));
 
     if (!found) {
       emitter.emit('message', 'No process using this domain');
       if (!range) {
-        return;
+        return Promise.reject('No process using this domain');
       }
 
       return bookAPort(domain, range);
@@ -78,7 +84,7 @@ function getPortForDomain (domain, range) {
   });
 }
 
-function parseHostnameToPortValue(value) {
+function parseHostnameToPortValue (value) {
   return value && value.split(',').reduce((map, item) => {
     item = item.split(':');
     if (item.length === 2) {
@@ -107,7 +113,7 @@ function getPm2ProcessList () {
         pm2.disconnect();
         if (err) return reject(err);
         resolve(list);
-      })
+      });
     });
   }
 
@@ -115,24 +121,20 @@ function getPm2ProcessList () {
       .then(onceConnected);
 }
 
-function getRandomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + +min;
-}
+function getRandomInt (min, max, forbidden) {
+  var delta = max - min;
+  var int = Math.floor(Math.random() * (delta + 1)) + +min;
 
-function getRandomInt(min, max, forbidden) {
-    var delta = max - min;
-    var int = Math.floor(Math.random() * (delta + 1)) + +min;
-
-    for (let i = 0; i < delta; i++) {
-      let result = i + int;
-      if (result > max) {
-        result-= delta;
-      }
-
-      if (forbidden.indexOf(result) === -1) {
-        return result;
-      }
+  for (let i = 0; i < delta; i++) {
+    let result = i + int;
+    if (result > max) {
+      result -= delta;
     }
+
+    if (forbidden.indexOf(result) === -1) {
+      return result;
+    }
+  }
 }
 
 function getRandomAvailablePortInRange (range) {
@@ -142,7 +144,7 @@ function getRandomAvailablePortInRange (range) {
       emitter.emit('message', 'List of ports booked:\n' + JSON.stringify(bookedPorts, null, '  '));
       emitter.emit('message', 'Searching for an available port in range ' + range[0] + ' to ' + range[1]);
 
-      Object.keys(bookedPorts).forEach((port) => { if (ports.indexOf(port) === -1 ) ports.push(port); });
+      Object.keys(bookedPorts).forEach((port) => { if (ports.indexOf(port) === -1) { ports.push(port); } });
       var port = getRandomInt(range[0], range[1], ports);
 
       if (port === undefined) {
@@ -158,7 +160,7 @@ function getTcpPortsInUse () {
     emitter.emit('message', 'Getting list of active ports using netstat');
 
     var time = Date.now();
-    // arguments -plnt:
+    // arguments -lnt:
     // -l : show only listening ports
     // -n : show numeric values: no domain for adress, no protocol for ports, no user names
     // -t : show only tpc protocol
@@ -171,7 +173,7 @@ function getTcpPortsInUse () {
       }
 
       return resolve(output.toString().split('\n'));
-    })
+    });
   }).then((output) => {
     return output.reduce((ports, line) => {
       var match = netstatLinePattern.exec(line);

@@ -33,6 +33,16 @@ CustomError.prototype.getErrors = function getErrors (map) {
   return errors;
 };
 
+CustomError.wrapMulti = function wrapMultipleErrors (errors, code, message, data) {
+  var args = parseSignature([].slice.call(arguments, 1));
+
+  args.data = args.data || {};
+
+  args.data.originalErrors = errors;
+
+  return new CustomError(args.code, args.message, args.data);
+};
+
 CustomError.wrap = function wrapError (error, code, message, data) {
   var args = parseSignature([].slice.call(arguments, 1));
 
