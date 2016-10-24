@@ -38,7 +38,8 @@ function bookAPort (domain, range) {
 }
 
 function findPm2ProcessOnDomain (domain, item) {
-  var simplePortRelation = (item.pm2_env.env[simpleDomainVar] === domain) && (simplePortVar in item.pm2_env.env);
+  var envDomain = item.pm2_env.env[simpleDomainVar] && item.pm2_env.env[simpleDomainVar].toString().toLowerCase();
+  var simplePortRelation = (envDomain === domain) && (simplePortVar in item.pm2_env.env);
 
   if (simplePortRelation) {
     item.domainToPort = {
@@ -53,6 +54,7 @@ function findPm2ProcessOnDomain (domain, item) {
 }
 
 function getPortForDomain (domain, range) {
+  domain = domain.toLowerCase();
   emitter.emit('message', 'Searching port for domain "' + domain + '"');
   if (range) {
     emitter.emit('message', 'For free port, it will be selected in range ' + range[0] + ' to ' + range[1]);
@@ -88,7 +90,7 @@ function parseHostnameToPortValue (value) {
   return value && value.split(',').reduce((map, item) => {
     item = item.split(':');
     if (item.length === 2) {
-      map[item[0]] = item[1];
+      map[item[0].toLowerCase()] = item[1];
     }
     return map;
   }, {});
