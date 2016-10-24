@@ -9,12 +9,6 @@ var pm2ProcessLookup = require('./pm2ProcessLookup');
 
 // var pkg = require('../package.json');
 
-function extend (target, values) {
-  Object.keys(values).forEach((key) => {
-    target[key] = values[key];
-  });
-}
-
 module.exports = Pm2HttpServiceProxy;
 
 function Pm2HttpServiceProxy () {
@@ -35,7 +29,7 @@ Pm2HttpServiceProxy.createServer = function createServer () {
 
 util.inherits(Pm2HttpServiceProxy, EventEmitter);
 
-extend(Pm2HttpServiceProxy.prototype, {
+Object.assign(Pm2HttpServiceProxy.prototype, {
   _domainCache: {},
   _domainCacheTimeout: 5000,
 
