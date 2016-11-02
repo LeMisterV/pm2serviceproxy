@@ -106,21 +106,34 @@ function getPm2Access () {
   });
 }
 
-function getPm2ProcessList () {
-  function onceConnected () {
-    return new Promise((resolve, reject) => {
-      emitter.emit('message', 'getting pm2 process list');
-      pm2.list((err, list) => {
-        emitter.emit('message', 'disconnect from pm2');
-        pm2.disconnect();
-        if (err) return reject(err);
-        resolve(list);
-      });
+var willGetPm2List;
+function getPm2List () {
+  return new Promise((resolve, reject) => {
+    emitter.emit('message', 'getting pm2 process list');
+    pm2.list((err, list) => {
+      emitter.emit('message', 'disconnect from pm2');
+      pm2.disconnect();
+      if (err) return reject(err);
+      resolve(list);
     });
+  });
+}
+
+function getPm2ProcessList () {
+  if (willGetPm2List) {
+    return willGetPm2List;
   }
 
-  return getPm2Access()
-      .then(onceConnected);
+  willGetPm2List = getPm2Access()
+    .then(getPm2List);
+
+  willGetPm2List.then(() => {
+    willGetPm2List = undefined;
+  }, () => {
+    willGetPm2List = undefined;
+  });
+
+  return willGetPm2List;
 }
 
 function getRandomInt (min, max, forbidden) {
