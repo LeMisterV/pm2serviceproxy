@@ -3,7 +3,7 @@
 const exec = require('child_process').exec;
 const EventEmitter = require('events');
 
-const pm2 = require('pm2');
+const pm2 = require('./pm2');
 
 const emitter = new EventEmitter();
 
@@ -60,7 +60,7 @@ function getPortForDomain (domain, range) {
     emitter.emit('message', 'For free port, it will be selected in range ' + range[0] + ' to ' + range[1]);
   }
 
-  return getPm2ProcessList()
+  return pm2.getProcessList()
   .then((list) => {
     var listFormated = list.map((item) => item.name + ':' + item.pm2_env.env[simplePortVar]);
 
@@ -94,46 +94,6 @@ function parseHostnameToPortValue (value) {
     }
     return map;
   }, {});
-}
-
-function getPm2Access () {
-  return new Promise((resolve, reject) => {
-    emitter.emit('message', 'connecting to pm2');
-    pm2.connect((err) => {
-      if (err) return reject(err);
-      resolve();
-    });
-  });
-}
-
-var willGetPm2List;
-function getPm2List () {
-  return new Promise((resolve, reject) => {
-    emitter.emit('message', 'getting pm2 process list');
-    pm2.list((err, list) => {
-      emitter.emit('message', 'disconnect from pm2');
-      pm2.disconnect();
-      if (err) return reject(err);
-      resolve(list);
-    });
-  });
-}
-
-function getPm2ProcessList () {
-  if (willGetPm2List) {
-    return willGetPm2List;
-  }
-
-  willGetPm2List = getPm2Access()
-    .then(getPm2List);
-
-  willGetPm2List.then(() => {
-    willGetPm2List = undefined;
-  }, () => {
-    willGetPm2List = undefined;
-  });
-
-  return willGetPm2List;
 }
 
 function getRandomInt (min, max, forbidden) {
