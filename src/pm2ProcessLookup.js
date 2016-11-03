@@ -5,13 +5,15 @@ const EventEmitter = require('events');
 
 const pm2 = require('./pm2');
 
-const emitter = new EventEmitter();
-
 const netstatLinePattern = /^\w+\s+\d+\s+\d+\s+[^\s]+:(\d+)\s+[^\s]+\s+[^\s]+(?:\s+(?:(\d+)\/[^\s]+|-))?/;
 const bookingTime = 300000;
 const simpleDomainVar = 'DOMAIN';
 const simplePortVar = 'PORT';
 const complexVar = 'HOSTNAME_TO_PORT';
+
+const emitter = new EventEmitter();
+
+pm2.emitter.on('message', emitter.emit.bind(emitter, 'message'));
 
 module.exports.defaultRange = [8801, 9000];
 module.exports.on = emitter.on.bind(emitter);
