@@ -17,10 +17,11 @@ module.exports.defaultRange = [8801, 9000];
 module.exports.on = emitter.on.bind(emitter);
 module.exports.getPortForDomain = getPortForDomain;
 
-var bookedPorts = {};
+const bookedPorts = {};
 
 function bookAPort (domain, range) {
   if (bookedPorts[domain]) {
+    emitter.emit('message', 'port ' + bookedPorts[domain] + ' booked for this domain');
     return bookedPorts[domain];
   }
 
@@ -57,7 +58,7 @@ function getPortForDomain (domain, range) {
   domain = domain.toLowerCase();
   emitter.emit('message', 'Searching port for domain "' + domain + '"');
   if (range) {
-    emitter.emit('message', 'For free port, it will be selected in range ' + range[0] + ' to ' + range[1]);
+    emitter.emit('message', 'An available port will be selected in range ' + range[0] + ' to ' + range[1]);
   }
 
   return pm2.getProcessList()
