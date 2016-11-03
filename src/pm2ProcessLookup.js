@@ -1,11 +1,10 @@
 'use strict';
 
-const exec = require('child_process').exec;
 const EventEmitter = require('events');
 
 const pm2 = require('./pm2');
+const netstat = require('./netstat');
 
-const netstatLinePattern = /^\w+\s+\d+\s+\d+\s+[^\s]+:(\d+)\s+[^\s]+\s+[^\s]+(?:\s+(?:(\d+)\/[^\s]+|-))?/;
 const bookingTime = 300000;
 const simpleDomainVar = 'DOMAIN';
 const simplePortVar = 'PORT';
@@ -14,6 +13,7 @@ const complexVar = 'HOSTNAME_TO_PORT';
 const emitter = new EventEmitter();
 
 pm2.emitter.on('message', emitter.emit.bind(emitter, 'message'));
+netstat.emitter.on('message', emitter.emit.bind(emitter, 'message'));
 
 module.exports.defaultRange = [8801, 9000];
 module.exports.on = emitter.on.bind(emitter);
@@ -27,12 +27,17 @@ function bookAPort (domain, range) {
     return bookedPorts[domain];
   }
 
-  let willGetPort = getRandomAvailablePortInRange(range);
+  let willGetPort = netstat.getRandomAvailablePortInRange(
+    range,
+    Object.keys(bookedPorts).map((domain) => bookedPorts[domain])
+  );
 
   willGetPort
     .then((port) => {
+      emitter.emit('message', 'register port booking for domain "' + domain + '" on port ' + port);
       bookedPorts[domain] = port;
       setTimeout(() => {
+        emitter.emit('message', 'port booking expired for domain "' + domain + '" on port ' + port);
         delete bookedPorts[domain];
       }, bookingTime).unref();
     });
@@ -98,127 +103,3 @@ function parseHostnameToPortValue (value) {
     return map;
   }, {});
 }
-
-function getRandomInt (min, max, forbidden) {
-  var delta = max - min;
-  var int = Math.floor(Math.random() * (delta + 1)) + +min;
-
-  for (let i = 0; i < delta; i++) {
-    let result = i + int;
-    if (result > max) {
-      result -= delta;
-    }
-
-    if (forbidden.indexOf(result) === -1) {
-      return result;
-    }
-  }
-}
-
-function getRandomAvailablePortInRange (range) {
-  return getTcpPortsInUse()
-    .then((portsInUse) => {
-      emitter.emit('message', 'List of ports in use:\n' + JSON.stringify(portsInUse, null, '  '));
-      emitter.emit('message', 'List of ports booked:\n' + JSON.stringify(bookedPorts, null, '  '));
-      emitter.emit('message', 'Searching for an available port in range ' + range[0] + ' to ' + range[1]);
-
-      Object.keys(bookedPorts).forEach((domain) => {
-        let port = bookedPorts[domain];
-        if (portsInUse.indexOf(port) === -1) {
-          portsInUse.push(port);
-        }
-      });
-
-      var port = getRandomInt(range[0], range[1], portsInUse);
-
-      if (port === undefined) {
-        throw new Error('All ports in range used. :(');
-      }
-
-      return port;
-    });
-}
-
-function getTcpPortsInUse () {
-  return new Promise((resolve, reject) => {
-    emitter.emit('message', 'Getting list of active ports using netstat');
-
-    var time = Date.now();
-    // arguments -lnt:
-    // -l : show only listening ports
-    // -n : show numeric values: no domain for adress, no protocol for ports, no user names
-    // -t : show only tpc protocol
-    exec('netstat -lnt', {
-      stdio: [null, null, 'ignore']
-    }, function (error, output) {
-      emitter.emit('message', 'netstat process done in ' + (Date.now() - time) + 'ms');
-      if (error) {
-        return reject(error);
-      }
-
-      return resolve(output.toString().split('\n'));
-    });
-  }).then((output) => {
-    return output.reduce((ports, line) => {
-      var match = netstatLinePattern.exec(line);
-
-      if (match) {
-        ports.push(+match[1]);
-      }
-
-      return ports;
-    }, []);
-  });
-}
-
-/*
-function getFirstAvailablePortInRange (range) {
-  return getTcpPortsInUseWithPid()
-    .then((ports) => {
-      emitter.emit('message', 'List of ports in use:\n' + JSON.stringify(ports, null, '  '));
-      emitter.emit('message', 'Searching for an available port in range ' + range[0] + ' to ' + range[1]);
-      for (let i = +range[0]; i < +range[1]; i++) {
-        if (!ports[i]) {
-          return i;
-        }
-      }
-
-      throw new Error('All ports in range used. :(');
-    });
-}
-
-function getTcpPortsInUseWithPid () {
-  return new Promise((resolve, reject) => {
-    emitter.emit('message', 'Getting list of active ports and pid using netstat');
-
-    var time = Date.now();
-    // arguments -plnt:
-    // -p : show PID
-    // -l : show only listening ports
-    // -n : show numeric values: no domain for adress, no protocol for ports, no user names
-    // -t : show only tpc protocol
-    exec('netstat -plnt', {
-      stdio: [null, null, 'ignore']
-    }, function (error, output) {
-      emitter.emit('message', 'netstat process done in ' + (Date.now() - time) + 'ms');
-      if (error) {
-        return reject(error);
-      }
-
-      return resolve(output.toString().split('\n'));
-    })
-  }).then((output) => {
-    var ports = {};
-
-    output.forEach(function (line) {
-      var match = netstatLinePattern.exec(line);
-
-      if (match) {
-        ports[match[1]] = +match[2];
-      }
-    });
-
-    return ports;
-  });
-}
-*/
