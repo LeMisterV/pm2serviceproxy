@@ -11,14 +11,41 @@ var pm2ProcessLookup = require('./pm2ProcessLookup');
 
 module.exports = Pm2HttpServiceProxy;
 
+const errors = {
+  ERR_PORT_IN_USE: {
+    name: 'port_in_use',
+    message: 'Port already in use'
+  },
+  ERR_PORT_ACCESS_RESTRICTED: {
+    name: 'port_access_restricted',
+    message: 'Access restricted on requested port'
+  },
+  ERR_REQUEST_SOCKET: {
+    name: 'request_socket_error',
+    message: 'Error on request\'s socket'
+  },
+  ERR_PORT_REQUEST_FORMAT: {
+    name: 'port_request_format',
+    message: 'port request not matching expected pattern'
+  },
+  ERR_PORT_NOT_FOUND: {
+    name: 'port_not_found',
+    message: 'unable to find a port for this domain'
+  },
+  ERR_SERVICE_NOT_FOUND: {
+    name: 'service_not_found',
+    message: 'unable to find service process for this domain'
+  },
+  ERR_CLOSE_ERRORS: {
+    name: 'close_errors',
+    message: 'Errors while closing servers'
+  }
+};
+
 function Pm2HttpServiceProxy () {
   EventEmitter.call(this);
   this._init.apply(this, arguments);
 }
-
-Pm2HttpServiceProxy.createServer = function createServer () {
-  return new Pm2HttpServiceProxy();
-};
 
 // Emits events:
 //  - listening
@@ -28,6 +55,12 @@ Pm2HttpServiceProxy.createServer = function createServer () {
 //  - proxy_error
 
 util.inherits(Pm2HttpServiceProxy, EventEmitter);
+
+Object.assign(Pm2HttpServiceProxy, errors, {
+  createServer () {
+    return new Pm2HttpServiceProxy();
+  }
+});
 
 Object.assign(Pm2HttpServiceProxy.prototype, {
   _domainCache: {},
@@ -68,9 +101,9 @@ Object.assign(Pm2HttpServiceProxy.prototype, {
 
   _onServerError: function _onServerError (error) {
     if (error.code === 'EADDRINUSE') {
-      this.emit('error', CustomError.wrap(error, 'Port already in use'));
+      this.emit('error', CustomError.wrap(error, errors.ERR_PORT_IN_USE));
     } else if (error.code === 'EACCES') {
-      this.emit('error', CustomError.wrap(error, 'Access restricted on requested port'));
+      this.emit('error', CustomError.wrap(error, errors.ERR_PORT_ACCESS_RESTRICTED));
     } else {
       this.emit('error', CustomError.wrap(error));
     }
@@ -81,7 +114,7 @@ Object.assign(Pm2HttpServiceProxy.prototype, {
   },
 
   _onClientError: function _onClientError (error) {
-    this.emit('request_error', CustomError.wrap(error, 'Error on request\'s socket'));
+    this.emit('request_error', CustomError.wrap(error, errors.ERR_REQUEST_SOCKET));
   },
 
   _onSearchPortRequest: function _onSearchPortRequest (request, response) {
@@ -90,7 +123,7 @@ Object.assign(Pm2HttpServiceProxy.prototype, {
       response.statusCode = 400;
       response.statusMessage = 'Unable to answer your request';
       response.end('Unable to answer your request');
-      this.emit('request_error', new CustomError('port request not matching expected pattern', {
+      this.emit('request_error', new CustomError(errors.ERR_PORT_REQUEST_FORMAT, {
         request
       }));
       return;
@@ -110,7 +143,7 @@ Object.assign(Pm2HttpServiceProxy.prototype, {
         response.statusCode = 500;
         response.statusMessage = 'Unable to find requested port';
         response.end('Unable to find requested port');
-        this.emit('request_error', CustomError.wrap(error, 'unable to find a port for this domain', {
+        this.emit('request_error', CustomError.wrap(error, errors.ERR_PORT_NOT_FOUND, {
           domain,
           range: this.range
         }));
@@ -182,7 +215,7 @@ Object.assign(Pm2HttpServiceProxy.prototype, {
       .then(
         null,
         (error) => {
-          error = CustomError.wrap(error, 'unable to find service process for this domain', { domain });
+          error = CustomError.wrap(error, errors.ERR_SERVICE_NOT_FOUND, { domain });
           this.emit('request_error', error);
 
           return Promise.reject(error);
@@ -275,7 +308,7 @@ Object.assign(Pm2HttpServiceProxy.prototype, {
         if (!finalError) {
           finalError = error;
         } else {
-          finalError = CustomError.wrapMulti([finalError, error], 'Errors while closing servers');
+          finalError = CustomError.wrapMulti([finalError, error], errors.ERR_CLOSE_ERRORS);
         }
       }
 

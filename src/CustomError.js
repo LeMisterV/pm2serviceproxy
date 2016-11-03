@@ -1,107 +1,134 @@
 module.exports = CustomError;
 
-function CustomError (code, message, data) {
-  Error.captureStackTrace(this, CustomError);
-
-  var args = parseSignature(arguments);
-
-  this.name = 'CustomError';
-  this.code = args.code;
-  this.message = args.message;
-  this.data = args.data || {};
-}
-
-CustomError.prototype = Object.create(Error.prototype);
-CustomError.prototype.constructor = CustomError;
-
-CustomError.prototype.getErrors = function getErrors (map) {
-  var data = this.data;
-  var errors = [];
-  while (data && data.originalError) {
-    errors.push(data.originalError);
-    data = data.originalError.data;
+function CustomError (errortype, data) {
+  if (!errortype || !errortype.name || !errortype.message) {
+    throw new CustomError(CustomError.INVALID_TYPE_DEFINITION);
   }
 
+  Error.captureStackTrace(this, CustomError);
+
+  this._type = errortype || CustomError.UNDEFINED_ERROR;
+  this._data = data || {};
+}
+
+CustomError.prototype = assign(
+  Object.create(Error.prototype),
+  {
+    get constructor () {
+      return CustomError;
+    },
+
+    get type () {
+      return this._type;
+    },
+
+    get data () {
+      return this._data;
+    },
+
+    get name () {
+      return this._type.name;
+    },
+
+    get message () {
+      return this._type.message;
+    },
+
+    getErrors (map) {
+      return getErrorsRecurcif(this, map);
+    },
+
+    is (type) {
+      return this._type === type;
+    }
+  }
+);
+
+assign(CustomError,
+  {
+    UNDEFINED_ERROR: {
+      name: 'UndefinedError',
+      message: 'Undefined error'
+    },
+
+    INVALID_TYPE_DEFINITION: {
+      name: 'Invalid error type definition',
+      message: 'Error type definition should be an object defined with at least a name and a message'
+    },
+
+    match (error, errortype, data) {
+      return (error instanceof CustomError) &&
+        (!errortype || error.type === errortype) &&
+        !Object.keys(data).some(valueConflict.bind(null, data, error.data));
+    },
+
+    wrapMulti (errors, errortype, data) {
+      let error = new CustomError(errortype, data);
+      error.data.originalErrors = errors;
+
+      return error;
+    },
+
+    wrap (originalError, errortype, data) {
+      data = data || {};
+
+      if (CustomError.match(originalError, errortype, data)) {
+        Object.assign(originalError.data, data);
+        return originalError;
+      }
+
+      let error = new CustomError(errortype, data);
+      error.data.originalError = originalError;
+
+      return error;
+    }
+  }
+);
+
+
+function assign (to) {
+  [].slice.call(arguments).slice(1).forEach((from) => {
+    Object.keys(from).forEach((property) => {
+      let descriptor = Object.getOwnPropertyDescriptor(from, property);
+
+      if (descriptor && (!descriptor.writable || !descriptor.configurable || !descriptor.enumerable || descriptor.get || descriptor.set)) {
+        Object.defineProperty(to, property, descriptor);
+      }
+      else {
+        to[property] = from[property];
+      }
+    });
+  });
+
+  return to;
+}
+
+function getErrorsRecurcif (error, map) {
   if (map) {
-    errors = errors
-      .map(map)
-      .filter(function (error) {
-        return !!error;
+    error = map(error);
+  }
+
+  if (!error) {
+    return [];
+  }
+
+  let errors = [error];
+
+  if (error.data) {
+    if (error.data.originalError) {
+      errors = getErrorsRecurcif(error.data.originalError, map).concat(errors);
+    } else if (error.data.originalErrors) {
+      error.data.originalErrors.reverse().forEach((error) => {
+        errors = getErrorsRecurcif(error, map).concat(errors);
       });
+    }
   }
 
   return errors;
-};
-
-CustomError.wrapMulti = function wrapMultipleErrors (errors, code, message, data) {
-  var args = parseSignature([].slice.call(arguments, 1));
-
-  args.data = args.data || {};
-
-  args.data.originalErrors = errors;
-
-  return new CustomError(args.code, args.message, args.data);
-};
-
-CustomError.wrap = function wrapError (error, code, message, data) {
-  var args = parseSignature([].slice.call(arguments, 1));
-
-  args.data = args.data || {};
-
-  if (error instanceof CustomError && !hasConflicts(error, args.code, args.message, args.data)) {
-    Object.keys(args.data).forEach(function (key) {
-      error.data[key] = args.data[key];
-    });
-
-    return error;
-  }
-
-  args.data.originalError = error;
-
-  if (args.code === undefined && error.code) {
-    args.code = error.code;
-  }
-
-  return new CustomError(args.code, args.message || error.message, args.data);
-};
-
-function parseSignature (args) {
-  var result = {};
-
-  if (!args.forEach) {
-    args = [].slice.call(args);
-  }
-
-  args.forEach(function (arg) {
-    switch (typeof arg) {
-      case 'string':
-        result.message = arg;
-        break;
-      case 'number':
-        result.code = arg;
-        break;
-      case 'object':
-        result.data = arg;
-        break;
-    }
-  });
-
-  return result;
 }
 
 // returns true if ref object differs from "this" on given key
 // no conflict if the key is not defined on ref object
-function valueConflict (ref, key) {
-  return (key in ref) && (ref[key] !== this[key]);
-}
-
-function hasConflicts (ref, code, message, data) {
-  return !!(
-    // checks code conflicts
-    (code !== undefined) && (code !== ref.code)) ||
-    // than message conflicts
-    (message && message !== ref.message) ||
-    // than data conflicts
-    Object.keys(data).some(valueConflict.bind(data, ref.data)
-  );
+function valueConflict (obj1, obj2, key) {
+  return (key in obj1) && (key in obj2) && (obj1[key] !== obj2[key]);
 }
