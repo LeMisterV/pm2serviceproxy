@@ -154,13 +154,19 @@ function getRandomInt (min, max, forbidden) {
 
 function getRandomAvailablePortInRange (range) {
   return getTcpPortsInUse()
-    .then((ports) => {
-      emitter.emit('message', 'List of ports in use:\n' + JSON.stringify(ports, null, '  '));
+    .then((portsInUse) => {
+      emitter.emit('message', 'List of ports in use:\n' + JSON.stringify(portsInUse, null, '  '));
       emitter.emit('message', 'List of ports booked:\n' + JSON.stringify(bookedPorts, null, '  '));
       emitter.emit('message', 'Searching for an available port in range ' + range[0] + ' to ' + range[1]);
 
-      Object.keys(bookedPorts).forEach((port) => { if (ports.indexOf(port) === -1) { ports.push(port); } });
-      var port = getRandomInt(range[0], range[1], ports);
+      Object.keys(bookedPorts).forEach((domain) => {
+        let port = bookedPorts[domain];
+        if (portsInUse.indexOf(port) === -1) {
+          portsInUse.push(port);
+        }
+      });
+
+      var port = getRandomInt(range[0], range[1], portsInUse);
 
       if (port === undefined) {
         throw new Error('All ports in range used. :(');
