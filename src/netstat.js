@@ -13,8 +13,12 @@ const netstat = {
   getRandomAvailablePortInRange (range, excludelist) {
     return netstat.getTcpPortsInUse()
       .then((portsinuse) => {
+        portsinuse = portsinuse.filter((port) => {
+          return port > range[0] && port < range[1];
+        });
+
         emitter.emit('message', 'Searching for an available port in range ' + range[0] + ' to ' + range[1]);
-        emitter.emit('message', 'List of ports in use:\n' + JSON.stringify(portsinuse, null, '  '));
+        emitter.emit('message', 'List of ports in use in this range:\n' + JSON.stringify(portsinuse, null, '  '));
         emitter.emit('message', 'List of ports excluded from search:\n' + JSON.stringify(excludelist, null, '  '));
 
         excludelist.forEach((port) => {
@@ -22,6 +26,8 @@ const netstat = {
             portsinuse.push(port);
           }
         });
+
+        emitter.emit('message', 'Number of available ports in range: ' + ((range[1] - range[0]) - portsinuse.length));
 
         var port = getRandomInt(range[0], range[1], portsinuse);
 
