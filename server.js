@@ -1,8 +1,11 @@
 var yargs = require('yargs');
 var nconf = require('nconf');
+var debug = require('debug');
 
-var pm2ProcessLookup = require('./src/pm2ProcessLookup');
-var Pm2HttpServiceProxy = require('./src/Pm2HttpServiceProxy');
+const pm2ProcessLookup = require('./src/pm2ProcessLookup');
+const Pm2HttpServiceProxy = require('./src/Pm2HttpServiceProxy');
+const pm2 = require('./src/pm2');
+const netstat = require('./src/netstat');
 
 var pkg = require('./package');
 
@@ -49,6 +52,13 @@ function collectConf (optionsSchema, onError) {
   }
 }
 
+var debugServer = debug('server:core');
+var debugRequest = debug('server:request');
+var debugProxy = debug('server:proxy');
+var debugPm2PL = debug('pm2:pl');
+var debugPm2Bind = debug('pm2:bind');
+var debugNetstat = debug('netstat');
+
 var conf = collectConf({
   p: {
     alias: 'port',
@@ -67,37 +77,47 @@ var conf = collectConf({
 var server = Pm2HttpServiceProxy.createServer(conf.get('range'));
 
 server.on('error', (error) => {
-  console.error('http server error', error);
+  debugServer('http server error', error);
 });
 
 server.on('proxy_error', (error) => {
-  console.error('http proxy error', error);
+  debugProxy('http proxy error', error);
 });
 
 server.on('request_error', (error) => {
-  console.error('http request error', error);
+  debugRequest('http request error', error);
 });
 
 server.on('listening', (port) => {
-  console.log('Listening on port %d', port);
+  debugServer('Listening on port %d', port);
 });
 
 server.on('info', (msg, data) => {
   var simpleData = {};
 
-  Object.keys(data).forEach((key) => {
-    simpleData[key] = '' + data[key];
-  });
+  if (data) {
+    Object.keys(data).forEach((key) => {
+      simpleData[key] = '' + data[key];
+    });
+  }
 
-  console.log(msg, simpleData);
+  debugServer(msg, simpleData);
 });
 
 pm2ProcessLookup.on('message', (msg) => {
-  console.log(msg);
+  debugPm2PL(msg);
 });
 
 pm2ProcessLookup.on('warning', (msg) => {
-  console.error(msg);
+  debugPm2PL(msg);
+});
+
+pm2.emitter.on('message', (msg) => {
+  debugPm2Bind(msg);
+});
+
+netstat.emitter.on('message', (msg) => {
+  debugNetstat(msg);
 });
 
 server.listen(conf.get('port'));

@@ -12,9 +12,6 @@ const complexVar = 'HOSTNAME_TO_PORT';
 
 const emitter = new EventEmitter();
 
-pm2.emitter.on('message', emitter.emit.bind(emitter, 'message'));
-netstat.emitter.on('message', emitter.emit.bind(emitter, 'message'));
-
 module.exports.defaultRange = [8801, 9000];
 module.exports.on = emitter.on.bind(emitter);
 module.exports.getPortForDomain = getPortForDomain;

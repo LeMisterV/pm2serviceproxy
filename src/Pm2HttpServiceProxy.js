@@ -233,7 +233,7 @@ Object.assign(Pm2HttpServiceProxy.prototype, {
         setTimeout(() => {
           delete this._domainCache[domain];
         }, this._domainCacheTimeout);
-      });
+      }, () => {});
 
     return willGetPort;
   },
