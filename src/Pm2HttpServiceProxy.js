@@ -66,7 +66,7 @@ Object.assign(Pm2HttpServiceProxy.prototype, {
   _domainCache: {},
   _domainCacheTimeout: 5000,
 
-  _portGetterPattern: /^\/port\/([^\/]+)$/,
+  _portGetterPattern: /^\/port\/([^/]+)$/,
   _localAdresses: ['::ffff:127.0.0.1', '127.0.0.1'],
 
   _init: function _init (range) {
