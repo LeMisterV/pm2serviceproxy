@@ -1,5 +1,8 @@
 module.exports = CustomError;
 
+const stype = Symbol('type');
+const sdata = Symbol('data');
+
 function CustomError (errortype, data) {
   if (!errortype || !errortype.name || !errortype.message) {
     throw new CustomError(CustomError.INVALID_TYPE_DEFINITION);
@@ -7,8 +10,8 @@ function CustomError (errortype, data) {
 
   Error.captureStackTrace(this, CustomError);
 
-  this._type = errortype || CustomError.UNDEFINED_ERROR;
-  this._data = data || {};
+  this[stype] = errortype || CustomError.UNDEFINED_ERROR;
+  this[sdata] = data || {};
 }
 
 CustomError.prototype = assign(
@@ -19,19 +22,19 @@ CustomError.prototype = assign(
     },
 
     get type () {
-      return this._type;
+      return this[stype];
     },
 
     get data () {
-      return this._data;
+      return this[sdata];
     },
 
     get name () {
-      return this._type.name;
+      return this[stype].name;
     },
 
     get message () {
-      return this._type.message;
+      return this[stype].message;
     },
 
     getErrors (map) {
@@ -39,7 +42,7 @@ CustomError.prototype = assign(
     },
 
     is (type) {
-      return this._type === type;
+      return this[stype] === type;
     }
   }
 );
@@ -85,7 +88,6 @@ assign(CustomError,
   }
 );
 
-
 function assign (to) {
   [].slice.call(arguments).slice(1).forEach((from) => {
     Object.keys(from).forEach((property) => {
@@ -93,8 +95,7 @@ function assign (to) {
 
       if (descriptor && (!descriptor.writable || !descriptor.configurable || !descriptor.enumerable || descriptor.get || descriptor.set)) {
         Object.defineProperty(to, property, descriptor);
-      }
-      else {
+      } else {
         to[property] = from[property];
       }
     });
